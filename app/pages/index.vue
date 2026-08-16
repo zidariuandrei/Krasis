@@ -524,7 +524,10 @@ const favoriteLimit = computed(() => {
   if (viewportWidth.value <= 1024) return 4
   return 6
 })
-const useDropdown = computed(() => favorites.value.length > favoriteLimit.value)
+const useDropdown = computed(() => {
+  if (viewportWidth.value <= 640) return true
+  return favorites.value.length > favoriteLimit.value
+})
 const favoritesOpen = ref(false)
 
 const onResize = () => {
@@ -1738,14 +1741,18 @@ h1 em {
 
   .atlas-intro {
     display: flex;
-    align-items: center;
-    gap: 16px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 14px 16px;
     padding-bottom: 14px;
+    text-align: center;
   }
 
   .atlas-intro > div {
-    flex: 1 1 56%;
+    flex: 1 1 100%;
     min-width: 0;
+    text-align: center;
   }
 
   h1 {
@@ -1753,9 +1760,10 @@ h1 em {
   }
 
   .palette-inspector {
-    flex: 0 0 44%;
-    width: auto;
-    margin-top: 0;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
   }
 
   .inspector-grid {

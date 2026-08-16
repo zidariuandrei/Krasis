@@ -1620,9 +1620,10 @@ const pixelArt: PixelCell[][] = buildGreekScene()
 .ln-input {
   flex: 1 1 auto;
   min-width: 0;
+  height: 36px;
   border: 1px solid;
   border-radius: 999px;
-  padding: 11px 18px;
+  padding: 0 16px;
   font: inherit;
   font-size: 0.78rem;
 }
@@ -1633,6 +1634,7 @@ const pixelArt: PixelCell[][] = buildGreekScene()
 
 .ln-submit {
   flex: 0 0 auto;
+  height: 36px;
   border: 0;
   border-radius: 999px;
   padding: 11px 22px;
@@ -2228,11 +2230,23 @@ const pixelArt: PixelCell[][] = buildGreekScene()
     grid-template-columns: 1fr;
   }
 
+  /* Preview first, palette below on narrow screens. */
+  .adv-main {
+    order: -1;
+  }
+
+  /* Collapse is a desktop affordance; on narrow screens the sidebar is
+     always shown, so hide the dead toggle. */
+  .adv-trigger {
+    display: none;
+  }
+
   /* Collapsing must never hide the sidebar. On narrow screens the 48px rail
      is meaningless, so keep the full sidebar visible instead. !important
      overrides the inline display:none that v-show sets on the body. */
   .adv-layout.is-collapsed .adv-sidebar {
     display: block;
+    padding: 16px;
   }
 
   .adv-sidebar-body {
@@ -2330,16 +2344,45 @@ const pixelArt: PixelCell[][] = buildGreekScene()
   .ln-cta-panel {
     flex-direction: column;
     align-items: flex-start;
+    justify-content: space-between;
+    gap: 28px;
+    flex-wrap: nowrap;
+    min-height: 35vh;
+    max-height: 35vh;
   }
 
   .ln-form {
     width: 100%;
     max-width: none;
     flex-direction: column;
+    gap: 16px;
+    margin-top: auto;
+  }
+
+  /* Full-width fields should not be giant pills on phones. */
+  .ln-input,
+  .ln-submit {
+    border-radius: 12px;
+  }
+
+  .ln-input {
+    font-size: 0.72rem;
+    height: 36px;
+    flex: 0 0 auto;
+    padding: 0 12px;
   }
 
   .ln-submit {
     width: 100%;
+  }
+
+  .adv-pixel-view .adv-pixel {
+    padding: 12px;
+  }
+
+  .adv-pixel-view .adv-pixel-cell {
+    width: clamp(4px, 1.3vw, 11px);
+    height: clamp(4px, 1.3vw, 11px);
   }
 }
 </style>
