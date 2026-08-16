@@ -725,30 +725,7 @@ onMounted(centerField)
       </div>
 
       <div class="header-meta">
-        <button
-          class="theme-toggle"
-          type="button"
-          :class="{ 'is-dark': theme === 'dark' }"
-          @click="toggleTheme"
-          :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`"
-        >
-          <span class="theme-toggle-icons" aria-hidden="true">
-            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="4" />
-              <line x1="12" y1="2" x2="12" y2="4" />
-              <line x1="12" y1="20" x2="12" y2="22" />
-              <line x1="2" y1="12" x2="4" y2="12" />
-              <line x1="20" y1="12" x2="22" y2="12" />
-              <line x1="4.5" y1="4.5" x2="6" y2="6" />
-              <line x1="18" y1="18" x2="19.5" y2="19.5" />
-              <line x1="4.5" y1="19.5" x2="6" y2="18" />
-              <line x1="18" y1="6" x2="19.5" y2="4.5" />
-            </svg>
-            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-          </span>
-        </button>
+        <ThemeToggle />
       </div>
     </header>
 
@@ -757,67 +734,8 @@ onMounted(centerField)
         <div>
           <p class="eyebrow">ΚΡΑΣΙΣ / THE MIXING</p>
           <h1 id="atlas-title">Color, in <em>neighborhoods.</em></h1>
-          <div class="favorites" v-if="favorites.length">
-            <div v-if="useDropdown" class="favorites-dropdown">
-              <button class="favorites-toggle" type="button" :aria-expanded="favoritesOpen" @click="favoritesOpen = !favoritesOpen">
-                <svg class="favorites-icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                  <rect x="1" y="1" width="6" height="6" rx="1.6" fill="currentColor"></rect>
-                  <rect x="9" y="1" width="6" height="6" rx="1.6" fill="currentColor"></rect>
-                  <rect x="1" y="9" width="6" height="6" rx="1.6" fill="currentColor"></rect>
-                  <rect x="9" y="9" width="6" height="6" rx="1.6" fill="currentColor"></rect>
-                </svg>
-                <span class="favorites-toggle-label">Saved palettes</span>
-                <span class="favorites-count">{{ favorites.length }}</span>
-                <span class="favorites-caret" aria-hidden="true">
-                  <svg viewBox="0 0 16 16" width="11" height="11">
-                    <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
-                  </svg>
-                </span>
-              </button>
-              <template v-if="favoritesOpen">
-                <div class="dropdown-scrim" @click="favoritesOpen = false"></div>
-                <div class="favorites-menu" role="menu">
-                  <div
-                    v-for="fav in favorites"
-                    :key="fav.id"
-                    class="favorites-menu-item"
-                    :aria-pressed="isCurrentFavorite(fav)"
-                  >
-                    <button class="menu-main" type="button" :aria-label="`View saved palette at ${formatPosition(fav.center.x)}, ${formatPosition(fav.center.y)}`" @click="selectFromDropdown(fav)">
-                      <span class="chip-swatches">
-                        <span
-                          v-for="cell in fav.cells"
-                          :key="cell.hex"
-                          class="chip-swatch"
-                          :style="{ backgroundColor: cell.hex }"
-                        ></span>
-                      </span>
-                    </button>
-                    <button class="chip-remove" type="button" :aria-label="`Remove favorite at ${fav.center.x}, ${fav.center.y}`" @click="removeFavorite(fav.id)">×</button>
-                  </div>
-                </div>
-              </template>
-            </div>
-            <div v-else class="favorites-track">
-              <div
-                v-for="fav in favorites"
-                :key="fav.id"
-                class="favorite-chip"
-                :aria-pressed="isCurrentFavorite(fav)"
-              >
-                <button class="chip-main" type="button" :aria-label="`View saved palette at ${formatPosition(fav.center.x)}, ${formatPosition(fav.center.y)}`" @click="viewFavorite(fav)">
-                  <span class="chip-swatches">
-                    <span
-                      v-for="cell in fav.cells"
-                      :key="cell.hex"
-                      class="chip-swatch"
-                      :style="{ backgroundColor: cell.hex }"
-                    ></span>
-                  </span>
-                </button>
-                <button class="chip-remove" type="button" :aria-label="`Remove favorite at ${fav.center.x}, ${fav.center.y}`" @click="removeFavorite(fav.id)">×</button>
-              </div>
-            </div>
+          <div class="mt-3">
+            <FavoritesDrawer @select="viewFavorite" />
           </div>
         </div>
 
@@ -827,15 +745,13 @@ onMounted(centerField)
             <strong>{{ activePrimary.hex }}</strong>
           </div>
           <div class="inspector-grid">
-            <div
+            <SwatchCard
               v-for="cell in displayedPalette"
               :key="`${cell.role}-${cell.key}`"
-              class="inspector-cell"
-              :style="{ backgroundColor: cell.hex, color: cell.ink }"
-            >
-              <span>{{ cell.role }}</span>
-              <strong>{{ cell.hex }}</strong>
-            </div>
+              :role="cell.role"
+              :hex="cell.hex"
+              :ink="cell.ink"
+            />
           </div>
           <div class="inspector-actions">
             <button class="favorite-button" type="button" :class="{ 'is-saved': isFavorited }" :aria-pressed="isFavorited" :aria-label="isFavorited ? 'Remove from favorites' : 'Add to favorites'" @click="saveFavorite">
@@ -932,8 +848,7 @@ onMounted(centerField)
 
 .site-shell.theme-dark {
   background-image:
-    linear-gradient(to right, rgba(232, 238, 246, 0.05) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(232, 238, 246, 0.05) 1px, transparent 1px);
+    linear-gradient(to right, rgba(232, 238, 246, 0.05) 1px, transparent 1px);
 }
 
 .theme-dark .atlas-stage {
@@ -1004,9 +919,8 @@ button {
   overflow: hidden;
   background-color: var(--paper);
   background-image:
-    linear-gradient(to right, rgba(14, 44, 83, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(14, 44, 83, 0.04) 1px, transparent 1px);
-  background-size: 48px 48px;
+    linear-gradient(to right, rgba(14, 44, 83, 0.04) 1px, transparent 1px);
+  background-size: 72px 72px;
 }
 
 .site-header,

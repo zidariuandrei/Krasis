@@ -226,145 +226,168 @@ type PixelCell = string | null
 
 function buildGreekScene(): PixelCell[][] {
   const W = 64
-  const H = 44
+  const H = 36
   const grid: PixelCell[][] = Array.from({ length: H }, () => Array<PixelCell>(W).fill(null))
 
   const set = (x: number, y: number, c: PixelCell) => {
     if (x >= 0 && x < W && y >= 0 && y < H) grid[y]![x] = c
   }
+
   const rect = (x0: number, y0: number, w: number, h: number, c: PixelCell) => {
-    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) set(x, y, c)
+    for (let y = y0; y < y0 + h; y++) {
+      for (let x = x0; x < x0 + w; x++) set(x, y, c)
+    }
   }
+
   const hline = (x0: number, x1: number, y: number, c: PixelCell) => {
-    for (let x = x0; x <= x1; x++) set(x, y, c)
+    const minX = Math.min(x0, x1)
+    const maxX = Math.max(x0, x1)
+    for (let x = minX; x <= maxX; x++) set(x, y, c)
   }
+
   const vline = (x: number, y0: number, y1: number, c: PixelCell) => {
-    for (let y = y0; y <= y1; y++) set(x, y, c)
+    const minY = Math.min(y0, y1)
+    const maxY = Math.max(y0, y1)
+    for (let y = minY; y <= maxY; y++) set(x, y, c)
   }
 
-  // --- Sky: sun of Helios with rays ---
+  const line = (x0: number, y0: number, x1: number, y1: number, c: PixelCell) => {
+    const dx = Math.abs(x1 - x0)
+    const dy = Math.abs(y1 - y0)
+    const sx = x0 < x1 ? 1 : -1
+    const sy = y0 < y1 ? 1 : -1
+    let err = dx - dy
+    let currX = x0
+    let currY = y0
+    while (true) {
+      set(currX, currY, c)
+      if (currX === x1 && currY === y1) break
+      const e2 = 2 * err
+      if (e2 > -dy) {
+        err -= dy
+        currX += sx
+      }
+      if (e2 < dx) {
+        err += dx
+        currY += sy
+      }
+    }
+  }
+
+  const circle = (cx: number, cy: number, r: number, c: PixelCell) => {
+    for (let y = -r; y <= r; y++) {
+      for (let x = -r; x <= r; x++) {
+        if (x * x + y * y <= r * r + 1) set(cx + x, cy + y, c)
+      }
+    }
+  }
+
+  // --- 1. Sky & Helios ---
   const sx = 54
-  const sy = 6
-  const sr = 3
-  for (let y = -sr; y <= sr; y++) {
-    for (let x = -sr; x <= sr; x++) {
-      if (x * x + y * y <= sr * sr) set(sx + x, sy + y, 'accent')
-    }
-  }
-  for (let i = 1; i <= 6; i++) {
-    set(sx + i, sy - i, 'accent')
-    set(sx - i, sy - i, 'accent')
-    set(sx + i, sy + i, 'accent')
-    set(sx - i, sy + i, 'accent')
-  }
+  const sy = 5
+  circle(sx, sy, 3, 'accent')
+  set(sx, sy, 'light')
+  hline(47, 49, 5, 'accent')
+  hline(59, 61, 5, 'accent')
+  vline(54, 0, 1, 'accent')
+  vline(54, 9, 10, 'accent')
 
-  // Clouds
-  const cloud = (cx: number, cy: number) => {
-    rect(cx, cy, 9, 2, 'light')
-    rect(cx + 2, cy - 1, 5, 1, 'light')
-    rect(cx + 1, cy + 2, 7, 1, 'light')
-  }
-  cloud(8, 4)
-  cloud(26, 2)
-  cloud(40, 9)
+  // Natural organic clouds
+  rect(6, 3, 10, 2, 'light')
+  rect(8, 2, 6, 1, 'light')
+  rect(26, 4, 12, 2, 'light')
+  rect(28, 3, 8, 1, 'light')
 
-  // Owls of Athena (small accent birds)
-  const bird = (x: number, y: number) => {
-    set(x, y, 'accent')
-    set(x + 1, y - 1, 'accent')
-    set(x + 2, y, 'accent')
-  }
-  bird(20, 8)
-  bird(36, 6)
+  // Owls / birds of Athena
+  set(18, 5, 'accent'); set(20, 5, 'accent'); set(19, 4, 'accent')
+  set(22, 3, 'accent'); set(24, 3, 'accent'); set(23, 2, 'accent')
 
-  // --- Sea (fills the channel; lands drawn over it) ---
-  const seaTop = 20
-  const seaBot = 33
-  rect(0, seaTop, W, seaBot - seaTop + 1, 'primary')
-  for (let y = seaTop + 1; y <= seaBot; y += 2) {
-    for (let x = 0; x < W; x += 3) {
-      if (grid[y]![x] === 'primary') set(x, y, 'light')
+  // --- 2. Sea ---
+  rect(0, 18, W, 18, 'primary')
+  for (let y = 19; y < H; y += 3) {
+    const offset = (y % 2 === 0) ? 0 : 4
+    for (let x = offset; x < W; x += 8) {
+      hline(x, Math.min(x + 2, W - 1), y, 'light')
     }
   }
 
-  // --- Left: island of Ithaca with the palace temple ---
-  const topLeft = (x: number) => {
-    if (x <= 4) return Math.round(30 - (x / 4) * 14)
-    if (x <= 15) return 16
-    return Math.round(16 + ((x - 15) / 2) * 14)
+  // --- 3. Left Island: Ithaca & Doric Temple ---
+  for (let x = 0; x <= 18; x++) {
+    const minY = Math.round(14 + (x / 18) * 10)
+    for (let y = minY; y < H; y++) set(x, y, 'shadow')
   }
-  for (let x = 0; x <= 17; x++) {
-    for (let y = topLeft(x); y <= seaBot; y++) set(x, y, 'shadow')
-  }
-  // Temple on the plateau
-  rect(4, 29, 12, 1, 'shadow') // stylobate step
-  rect(4, 28, 12, 1, 'light')
-  for (const cx of [5, 8, 11, 14]) {
-    rect(cx, 21, 2, 7, 'light')
-    rect(cx + 1, 21, 1, 7, 'shadow') // fluting
-    rect(cx - 1, 20, 4, 1, 'light') // capital
-  }
-  rect(4, 19, 12, 1, 'primary')
-  rect(4, 18, 12, 1, 'primary')
-  for (const cx of [5, 8, 11, 14]) set(cx, 19, 'shadow') // triglyphs
-  for (let y = 14; y <= 17; y++) {
-    const t = (y - 14) / 3
-    const half = Math.round(5.5 * t)
-    for (let x = 9 - half; x <= 9 + half; x++) set(x, y, 'primary')
-  }
-  rect(8, 15, 2, 2, 'accent') // statue in the pediment
 
-  // --- Right: the Cyclops's island with his cave ---
-  const topRight = (x: number) => Math.round(24 - ((x - 46) / 17) * 10)
-  for (let x = 46; x < W; x++) {
-    for (let y = topRight(x); y <= seaBot; y++) set(x, y, 'shadow')
-  }
-  rect(50, 27, 7, 4, 'dark') // cave mouth
-  // Polyphemus's single glowing eye
-  set(53, 28, 'accent')
-  set(52, 28, 'accent')
-  set(54, 28, 'accent')
-  set(53, 27, 'accent')
-  set(53, 29, 'accent')
-  // Flock of sheep
-  set(48, 31, 'light')
-  set(58, 31, 'light')
-  set(60, 32, 'light')
-  // Olive tree (gift of Athena)
-  vline(60, 18, 24, 'shadow')
-  rect(58, 16, 5, 2, 'light')
+  hline(2, 14, 14, 'light')
+  hline(3, 13, 13, 'light')
 
-  // --- Odysseus's ship (trireme) sailing the channel ---
-  rect(24, 32, 20, 1, 'dark') // keel
-  rect(25, 31, 18, 1, 'dark')
-  rect(27, 30, 15, 1, 'dark')
-  rect(29, 29, 12, 1, 'dark')
-  hline(29, 40, 28, 'light') // deck / gunwale
-  vline(34, 14, 28, 'dark') // mast
-  rect(27, 15, 15, 13, 'light') // sail
-  hline(27, 41, 15, 'primary')
-  hline(27, 41, 27, 'primary')
-  vline(27, 15, 27, 'primary')
-  vline(41, 15, 27, 'primary')
-  set(34, 20, 'primary')
-  set(33, 21, 'accent')
-  set(35, 21, 'accent')
-  set(34, 22, 'accent') // painted eye on the sail
-  hline(18, 23, 31, 'shadow') // oars (port)
-  hline(44, 45, 31, 'shadow') // oars (starboard)
-  set(18, 30, 'shadow')
-  set(23, 30, 'shadow')
-  set(44, 30, 'shadow')
-  set(45, 30, 'shadow')
-  // Odysseus at the stern with his bow
-  rect(40, 25, 2, 3, 'accent')
-  set(40, 24, 'accent')
-  set(41, 24, 'accent')
-  set(42, 25, 'accent')
-  set(43, 26, 'accent')
-  // A crewman at the bow
-  rect(27, 25, 2, 3, 'dark')
-  set(27, 24, 'dark')
+  for (const cx of [4, 7, 10, 13]) {
+    vline(cx, 8, 12, 'light')
+    vline(cx + 1, 8, 12, 'shadow')
+  }
+
+  hline(3, 14, 7, 'primary')
+  line(3, 6, 8, 3, 'primary')
+  line(14, 6, 8, 3, 'primary')
+  hline(4, 13, 6, 'primary')
+  set(8, 5, 'accent')
+
+  vline(16, 9, 14, 'dark')
+  rect(15, 7, 3, 2, 'light')
+
+  // --- 4. Right Island: Cyclops Cave ---
+  for (let x = 48; x < W; x++) {
+    const minY = Math.round(20 - ((x - 48) / 16) * 8)
+    for (let y = minY; y < H; y++) set(x, y, 'shadow')
+  }
+
+  rect(52, 18, 8, 6, 'dark')
+  hline(53, 58, 17, 'dark')
+
+  rect(55, 19, 2, 2, 'accent')
+  set(55, 19, 'light')
+
+  rect(49, 14, 2, 2, 'light')
+  set(48, 15, 'dark')
+  rect(59, 12, 2, 2, 'light')
+  set(58, 13, 'dark')
+
+  // --- 5. Odysseus's Trireme Warship ---
+  hline(24, 42, 24, 'dark')
+  hline(25, 41, 25, 'dark')
+  hline(26, 40, 26, 'dark')
+  hline(24, 42, 23, 'light')
+
+  rect(21, 24, 3, 2, 'accent')
+  line(24, 23, 22, 19, 'dark')
+  set(24, 22, 'accent')
+
+  line(42, 23, 44, 18, 'dark')
+
+  vline(33, 11, 23, 'dark')
+  rect(28, 12, 11, 10, 'light')
+  hline(28, 38, 12, 'primary')
+  hline(28, 38, 21, 'primary')
+  vline(28, 12, 21, 'primary')
+  vline(38, 12, 21, 'primary')
+
+  set(33, 16, 'accent')
+  set(33, 17, 'accent')
+
+  line(33, 11, 23, 21, 'primary')
+  line(33, 11, 43, 20, 'primary')
+
+  for (let i = 0; i < 5; i++) {
+    const ox = 28 + i * 3
+    line(ox, 24, ox - 2, 28, 'shadow')
+    set(ox - 3, 28, 'light')
+  }
+
+  rect(32, 19, 2, 4, 'accent')
+  set(32, 18, 'light')
+  hline(31, 34, 20, 'dark')
+
+  rect(41, 20, 2, 3, 'shadow')
+  set(41, 19, 'light')
 
   return grid
 }
@@ -389,30 +412,7 @@ const pixelArt: PixelCell[][] = buildGreekScene()
       </div>
 
       <div class="header-meta">
-        <button
-          class="theme-toggle"
-          type="button"
-          :class="{ 'is-dark': theme === 'dark' }"
-          @click="toggleTheme"
-          :aria-label="`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`"
-        >
-          <span class="theme-toggle-icons" aria-hidden="true">
-            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="4" />
-              <line x1="12" y1="2" x2="12" y2="4" />
-              <line x1="12" y1="20" x2="12" y2="22" />
-              <line x1="2" y1="12" x2="4" y2="12" />
-              <line x1="20" y1="12" x2="22" y2="12" />
-              <line x1="4.5" y1="4.5" x2="6" y2="6" />
-              <line x1="18" y1="18" x2="19.5" y2="19.5" />
-              <line x1="4.5" y1="19.5" x2="6" y2="18" />
-              <line x1="18" y1="6" x2="19.5" y2="4.5" />
-            </svg>
-            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
-          </span>
-        </button>
+        <ThemeToggle />
       </div>
     </header>
 
@@ -440,32 +440,26 @@ const pixelArt: PixelCell[][] = buildGreekScene()
           <section class="adv-variant" :class="{ 'is-active': theme === 'light' }">
             <h4 class="adv-variant-label">Light</h4>
             <div class="adv-swatches">
-              <div
+              <SwatchCard
                 v-for="item in itemsLight"
                 :key="item.role"
-                class="adv-swatch"
-                :style="{ backgroundColor: item.hex }"
-                :title="`${item.role} ${item.hex}`"
-              >
-                <span class="adv-swatch-role">{{ item.role }}</span>
-                <span class="adv-swatch-hex">{{ item.hex }}</span>
-              </div>
+                :role="item.role"
+                :hex="item.hex"
+                compact
+              />
             </div>
           </section>
 
           <section class="adv-variant" :class="{ 'is-active': theme === 'dark' }">
             <h4 class="adv-variant-label">Dark</h4>
             <div class="adv-swatches">
-              <div
+              <SwatchCard
                 v-for="item in itemsDark"
                 :key="item.role"
-                class="adv-swatch"
-                :style="{ backgroundColor: item.hex }"
-                :title="`${item.role} ${item.hex}`"
-              >
-                <span class="adv-swatch-role">{{ item.role }}</span>
-                <span class="adv-swatch-hex">{{ item.hex }}</span>
-              </div>
+                :role="item.role"
+                :hex="item.hex"
+                compact
+              />
             </div>
           </section>
 
@@ -510,46 +504,8 @@ const pixelArt: PixelCell[][] = buildGreekScene()
               <button class="adv-try-btn adv-try-ghost" type="button" @click="resetItems">Reset</button>
             </div>
 
-            <div class="adv-fav">
-              <button
-                class="adv-fav-toggle"
-                ref="favToggle"
-                type="button"
-                :aria-expanded="favoritesOpen"
-                @click="favoritesOpen = !favoritesOpen"
-              >
-                <svg class="adv-fav-icon" viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
-                  <rect x="1" y="1" width="6" height="6" rx="1.6" fill="currentColor"></rect>
-                  <rect x="9" y="1" width="6" height="6" rx="1.6" fill="currentColor"></rect>
-                  <rect x="1" y="9" width="6" height="6" rx="1.6" fill="currentColor"></rect>
-                  <rect x="9" y="9" width="6" height="6" rx="1.6" fill="currentColor"></rect>
-                </svg>
-                <span>Saved palettes</span>
-                <span class="adv-fav-count">{{ favorites.length }}</span>
-                <svg class="adv-fav-caret" viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-                  <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path>
-                </svg>
-              </button>
-
-              <template v-if="favoritesOpen">
-                <div class="adv-fav-scrim" @click="favoritesOpen = false"></div>
-                <div class="adv-fav-menu" ref="favMenu" :class="{ 'is-above': favAbove }" role="menu">
-                  <p v-if="favorites.length === 0" class="adv-fav-empty">No saved palettes yet.</p>
-                  <div v-for="fav in favorites" :key="fav.id" class="adv-fav-item">
-                    <button class="adv-fav-main" type="button" :aria-label="`Load saved palette`" @click="selectFavorite(fav)">
-                      <span class="adv-fav-swatches">
-                        <span
-                          v-for="cell in fav.cells"
-                          :key="cell.hex"
-                          class="adv-fav-swatch"
-                          :style="{ backgroundColor: cell.hex }"
-                        ></span>
-                      </span>
-                    </button>
-                    <button class="adv-fav-remove" type="button" :aria-label="`Remove favorite`" @click="removeFavorite(fav.id)">×</button>
-                  </div>
-                </div>
-              </template>
+            <div class="mt-3">
+              <FavoritesDrawer @select="selectFavorite" />
             </div>
           </section>
         </div>
@@ -1076,8 +1032,8 @@ const pixelArt: PixelCell[][] = buildGreekScene()
 }
 
 .adv-pixel-view .adv-pixel-cell {
-  width: clamp(5px, 1.3vw, 11px);
-  height: clamp(5px, 1.3vw, 11px);
+  width: clamp(7px, 1.5vw, 15px);
+  height: clamp(7px, 1.5vw, 15px);
 }
 
 .adv-landing {
