@@ -2228,8 +2228,15 @@ const pixelArt: PixelCell[][] = buildGreekScene()
     grid-template-columns: 1fr;
   }
 
+  /* Collapsing must never hide the sidebar. On narrow screens the 48px rail
+     is meaningless, so keep the full sidebar visible instead. !important
+     overrides the inline display:none that v-show sets on the body. */
   .adv-layout.is-collapsed .adv-sidebar {
-    display: none;
+    display: block;
+  }
+
+  .adv-sidebar-body {
+    display: flex !important;
   }
 
   .adv-rail {
