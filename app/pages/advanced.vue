@@ -1,61 +1,7 @@
 <script setup lang="ts">
 const route = useRoute()
 
-const theme = ref<'light' | 'dark'>('light')
-
-const toggleTheme = (event?: MouseEvent) => {
-  const apply = () => {
-    theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  }
-  const doc = typeof document !== 'undefined' ? document : undefined
-  const reduceMotion = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const supportsTransition = !!doc && typeof (doc as unknown as { startViewTransition?: unknown }).startViewTransition === 'function'
-  if (!doc || !supportsTransition || reduceMotion) {
-    apply()
-    return
-  }
-  const x = event?.clientX ?? window.innerWidth / 2
-  const y = event?.clientY ?? window.innerHeight / 2
-  const endRadius = Math.hypot(
-    Math.max(x, window.innerWidth - x),
-    Math.max(y, window.innerHeight - y),
-  )
-  const transition = (doc as unknown as { startViewTransition: (cb: () => void | Promise<void>) => { ready: Promise<void> } }).startViewTransition(() => {
-    apply()
-    return nextTick()
-  })
-  transition.ready.then(() => {
-    doc.documentElement.animate(
-      {
-        clipPath: [
-          `circle(0px at ${x}px ${y}px)`,
-          `circle(${endRadius}px at ${x}px ${y}px)`,
-        ],
-      },
-      {
-        duration: 420,
-        easing: 'ease-in-out',
-        pseudoElement: '::view-transition-new(root)',
-      },
-    )
-  })
-}
-
-onMounted(() => {
-  const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('krasis-theme') : null
-  if (saved === 'dark' || saved === 'light') {
-    theme.value = saved
-  } else if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches) {
-    theme.value = 'dark'
-  }
-})
-
-watch(theme, (value) => {
-  if (typeof localStorage !== 'undefined') localStorage.setItem('krasis-theme', value)
-  if (typeof document !== 'undefined') {
-    document.documentElement.classList.toggle('theme-dark', value === 'dark')
-  }
-})
+const { theme, toggleTheme } = useTheme()
 
 const sidebarOpen = ref(true)
 const contextMode = ref<'app' | 'pixel'>('app')
@@ -158,23 +104,7 @@ const toDark = (hex: string, role: string): string => {
   return hslToHex(h, target[0], target[1])
 }
 
-type FavoriteCell = { role: string; hex: string }
-type Favorite = { id: number; sig: string; center: { x: number; y: number }; cells: FavoriteCell[] }
-
-const FAVORITES_KEY = 'krasis-favorites'
-const loadFavorites = (): Favorite[] => {
-  if (typeof localStorage === 'undefined') return []
-  try {
-    const raw = localStorage.getItem(FAVORITES_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? (parsed as Favorite[]) : []
-  } catch {
-    return []
-  }
-}
-
-const favorites = ref<Favorite[]>([])
+const { favorites, addFavorite, removeFavorite, isFavorited: checkIsFavorited } = useFavorites()
 const favoritesOpen = ref(false)
 const favAbove = ref(false)
 const favToggle = ref<HTMLElement | null>(null)
@@ -196,19 +126,6 @@ watch(favoritesOpen, (open) => {
   })
 })
 
-onMounted(() => {
-  favorites.value = loadFavorites()
-})
-
-const persistFavorites = () => {
-  if (typeof localStorage !== 'undefined') localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites.value))
-}
-
-const removeFavorite = (id: number) => {
-  favorites.value = favorites.value.filter((favorite) => favorite.id !== id)
-  persistFavorites()
-}
-
 const selectFavorite = (fav: Favorite) => {
   const light = fav.cells.map((cell) => ({ role: cell.role, hex: cell.hex }))
   const dark = fav.cells.map((cell) => ({ role: cell.role, hex: toDark(cell.hex, cell.role) }))
@@ -222,16 +139,7 @@ const isFavorited = computed(() => favorites.value.some((favorite) => favorite.s
 const saveFavorite = () => {
   const cells = itemsLight.value.map((item) => ({ role: item.role, hex: item.hex }))
   const sig = currentSig.value
-  const existing = favorites.value.find((favorite) => favorite.sig === sig)
-  if (existing) {
-    favorites.value = favorites.value.filter((favorite) => favorite.id !== existing.id)
-  } else {
-    favorites.value = [
-      { id: Date.now(), sig, center: { x: 0, y: 0 }, cells },
-      ...favorites.value,
-    ]
-  }
-  persistFavorites()
+  addFavorite({ sig, center: { x: 0, y: 0 }, cells })
 }
 
 const copiedKey = ref<string | null>(null)
@@ -322,7 +230,7 @@ function buildGreekScene(): PixelCell[][] {
   const grid: PixelCell[][] = Array.from({ length: H }, () => Array<PixelCell>(W).fill(null))
 
   const set = (x: number, y: number, c: PixelCell) => {
-    if (x >= 0 && x < W && y >= 0 && y < H) grid[y][x] = c
+    if (x >= 0 && x < W && y >= 0 && y < H) grid[y]![x] = c
   }
   const rect = (x0: number, y0: number, w: number, h: number, c: PixelCell) => {
     for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) set(x, y, c)
@@ -375,7 +283,7 @@ function buildGreekScene(): PixelCell[][] {
   rect(0, seaTop, W, seaBot - seaTop + 1, 'primary')
   for (let y = seaTop + 1; y <= seaBot; y += 2) {
     for (let x = 0; x < W; x += 3) {
-      if (grid[y][x] === 'primary') set(x, y, 'light')
+      if (grid[y]![x] === 'primary') set(x, y, 'light')
     }
   }
 

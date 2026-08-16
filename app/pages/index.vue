@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+
+// Keep the atlas component alive when navigating to /advanced and back,
+// preserving the focused cell, pinned center, expanded rows and scroll.
+definePageMeta({
+  keepalive: true,
+})
 
 useHead({
   title: 'Krasis | Color field',
@@ -47,63 +53,13 @@ const seedHex = '#2E63A5'
 const fieldColumnRadius = 6
 const fieldRowRadius = ref(7)
 const fieldRef = ref<HTMLElement | null>(null)
+const atlasRestored = ref(false)
 const fieldHover = ref(false)
 const isTouch = ref(false)
-const theme = ref<'light' | 'dark'>('light')
 
-const toggleTheme = (event?: MouseEvent) => {
-  const apply = () => {
-    theme.value = theme.value === 'dark' ? 'light' : 'dark'
-  }
-  const doc = typeof document !== 'undefined' ? document : undefined
-  const reduceMotion = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  const supportsTransition = !!doc && typeof (doc as unknown as { startViewTransition?: unknown }).startViewTransition === 'function'
-  if (!doc || !supportsTransition || reduceMotion) {
-    apply()
-    return
-  }
-  const x = event?.clientX ?? window.innerWidth / 2
-  const y = event?.clientY ?? window.innerHeight / 2
-  const endRadius = Math.hypot(
-    Math.max(x, window.innerWidth - x),
-    Math.max(y, window.innerHeight - y),
-  )
-  const transition = (doc as unknown as { startViewTransition: (cb: () => void | Promise<void>) => { ready: Promise<void> } }).startViewTransition(() => {
-    apply()
-    return nextTick()
-  })
-  transition.ready.then(() => {
-    doc.documentElement.animate(
-      {
-        clipPath: [
-          `circle(0px at ${x}px ${y}px)`,
-          `circle(${endRadius}px at ${x}px ${y}px)`,
-        ],
-      },
-      {
-        duration: 420,
-        easing: 'ease-in-out',
-        pseudoElement: '::view-transition-new(root)',
-      },
-    )
-  })
-}
+const { theme, toggleTheme } = useTheme()
+const { favorites, addFavorite, removeFavorite, isFavorited: checkIsFavorited } = useFavorites()
 
-onMounted(() => {
-  const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('krasis-theme') : null
-  if (saved === 'dark' || saved === 'light') {
-    theme.value = saved
-  } else if (typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches) {
-    theme.value = 'dark'
-  }
-})
-
-watch(theme, (value) => {
-  if (typeof localStorage !== 'undefined') localStorage.setItem('krasis-theme', value)
-  if (typeof document !== 'undefined') {
-    document.documentElement.classList.toggle('theme-dark', value === 'dark')
-  }
-})
 const isExpanding = ref(false)
 const activeCenter = ref({ x: 0, y: 0 })
 const pinned = ref<{ x: number; y: number } | null>(null)
@@ -374,34 +330,49 @@ const buildPalette = (blockX0: number, blockY0: number, primaryX: number, primar
 
   return cells.map((cell) => {
     const role = roleByCell.get(cell.key) ?? 'support'
-    if (mode !== 'dark') return { ...cell, role }
-    const { l, c, h } = rgbToLch(cell.hex)
-    const target = DARK_TARGETS[role]
-    const nextC = Math.min(c * target.cScale, 38)
-    return { ...cell, role, hex: lchToHex({ l: target.l, c: nextC, h }) }
+    return { ...cell, role }
   })
 }
 
 const activePalette = computed<PaletteCell[]>(() =>
-  buildPalette(activeBlock.value.x0, activeBlock.value.y0, focusCenter.value.x, focusCenter.value.y)
+  buildPalette(activeBlock.value.x0, activeBlock.value.y0, focusCenter.value.x, focusCenter.value.y, theme.value)
 )
 
+const adaptHexToDark = (hex: string, role: PaletteRole): string => {
+  const { l, c, h } = rgbToLch(hex)
+  const target = DARK_TARGETS[role] ?? { l: 20, cScale: 0.5 }
+  const nextC = Math.min(c * target.cScale, 38)
+  return lchToHex({ l: target.l, c: nextC, h })
+}
+
 // When a saved favorite is selected, the inspector shows its stored cells
-// (exactly what the chip displays) without moving or re-highlighting the atlas.
+// matching the atlas selection for the active theme mode.
 const displayedPalette = computed<PaletteCell[]>(() => {
   const fav = displayedFavorite.value
   if (!fav) return activePalette.value
-  return fav.cells.map((cell, index) => ({
-    l: 0,
-    c: 0,
-    h: 0,
-    key: `${fav.sig}-${index}`,
-    x: 0,
-    y: 0,
-    hex: cell.hex,
-    ink: cellInk(cell.hex),
-    role: cell.role
-  }))
+
+  if (fav.center && typeof fav.center.x === 'number' && typeof fav.center.y === 'number') {
+    const { x0, y0 } = previewBlock(fav.center.x, fav.center.y)
+    const built = buildPalette(x0, y0, fav.center.x, fav.center.y, theme.value)
+    if (built && built.length > 0) {
+      return built
+    }
+  }
+
+  return fav.cells.map((cell, index) => {
+    const role = (cell.role as PaletteRole) || 'support'
+    return {
+      l: 0,
+      c: 0,
+      h: 0,
+      key: `${fav.sig}-${index}`,
+      x: 0,
+      y: 0,
+      hex: cell.hex,
+      ink: cellInk(cell.hex),
+      role
+    }
+  })
 })
 
 const activePrimary = computed(() => displayedPalette.value.find((cell) => cell.role === 'primary') ?? displayedPalette.value[0]!)
@@ -418,7 +389,13 @@ const previewPalettes = computed(() => {
   const cx = displayedCoord.value.x
   const cy = displayedCoord.value.y
   const { x0, y0 } = previewBlock(cx, cy)
-  const pack = (mode: 'light' | 'dark') => buildPalette(x0, y0, cx, cy, mode).map((cell) => ({ role: cell.role, hex: cell.hex }))
+  const pack = (mode: 'light' | 'dark') => {
+    const palette = buildPalette(x0, y0, cx, cy, mode)
+    return palette.map((cell) => ({
+      role: cell.role,
+      hex: mode === 'dark' ? adaptHexToDark(cell.hex, cell.role) : cell.hex,
+    }))
+  }
   return { light: pack('light'), dark: pack('dark') }
 })
 
@@ -486,23 +463,103 @@ const pinCenter = (cell: FieldCell) => {
   pinned.value = { x: cell.x, y: cell.y }
 }
 
-type FavoriteCell = { role: PaletteRole; hex: string }
-type Favorite = { id: number; sig: string; center: { x: number; y: number }; cells: FavoriteCell[] }
+const savedFlash = ref('')
 
-const FAVORITES_KEY = 'krasis-favorites'
+const ATLAS_STATE_KEY = 'krasis-atlas-state'
 
-const loadFavorites = (): Favorite[] => {
-  if (typeof localStorage === 'undefined') return []
+type AtlasSnapshot = {
+  x: number
+  y: number
+  pinnedX: number | null
+  pinnedY: number | null
+  favoriteId: number | null
+  rowRadius: number
+}
+
+// Persist the atlas selection explicitly so it survives navigation away and
+// back, regardless of whether the page instance is kept alive or remounted.
+const saveAtlasState = () => {
+  if (typeof localStorage === 'undefined') return
+  const snapshot: AtlasSnapshot = {
+    x: activeCenter.value.x,
+    y: activeCenter.value.y,
+    pinnedX: pinned.value?.x ?? null,
+    pinnedY: pinned.value?.y ?? null,
+    favoriteId: displayedFavorite.value?.id ?? null,
+    rowRadius: fieldRowRadius.value,
+  }
+  localStorage.setItem(ATLAS_STATE_KEY, JSON.stringify(snapshot))
+}
+
+const restoreAtlasStateSync = () => {
+  if (!import.meta.client || typeof localStorage === 'undefined') return
+  const raw = localStorage.getItem(ATLAS_STATE_KEY)
+  if (!raw) return
   try {
-    const raw = localStorage.getItem(FAVORITES_KEY)
-    return raw ? (JSON.parse(raw) as Favorite[]) : []
+    const state = JSON.parse(raw) as AtlasSnapshot
+    if (typeof state.rowRadius === 'number' && state.rowRadius >= 7) {
+      fieldRowRadius.value = Math.min(Math.round(state.rowRadius), 63)
+    }
+    if (typeof state.x === 'number' && typeof state.y === 'number') {
+      activeCenter.value = {
+        x: Math.max(-fieldColumnRadius, Math.min(fieldColumnRadius, state.x)),
+        y: state.y,
+      }
+    }
+    if (state.pinnedX != null && state.pinnedY != null) {
+      pinned.value = { x: state.pinnedX, y: state.pinnedY }
+    } else {
+      pinned.value = null
+    }
+    displayedFavorite.value =
+      typeof state.favoriteId === 'number'
+        ? favorites.value.find((favorite) => favorite.id === state.favoriteId) ?? null
+        : null
   } catch {
-    return []
+    localStorage.removeItem(ATLAS_STATE_KEY)
   }
 }
 
-const favorites = ref<Favorite[]>([])
-const savedFlash = ref('')
+// Restore state synchronously on client setup before component render
+restoreAtlasStateSync()
+
+const restoreAtlasState = async () => {
+  const reveal = () => {
+    atlasRestored.value = true
+  }
+  restoreAtlasStateSync()
+  if (typeof localStorage === 'undefined') {
+    reveal()
+    return
+  }
+  try {
+    await nextTick()
+    await nextTick()
+    requestAnimationFrame(() => {
+      const viewport = fieldRef.value
+      if (!viewport) {
+        reveal()
+        return
+      }
+      const target = displayedFavorite.value?.center ?? focusCenter.value
+      const cell = document.getElementById(`atlas-cell-${target.x}-${target.y}`)
+      if (!cell) {
+        reveal()
+        return
+      }
+      const viewRect = viewport.getBoundingClientRect()
+      const cellRect = cell.getBoundingClientRect()
+      viewport.scrollTop += cellRect.top - viewRect.top - (viewRect.height - cellRect.height) / 2
+      reveal()
+    })
+  } catch {
+    reveal()
+  }
+}
+
+// Save on every state change, on deactivation (keepalive) and on unmount.
+watch([activeCenter, pinned, displayedFavorite, fieldRowRadius], saveAtlasState)
+onDeactivated(saveAtlasState)
 
 const activeSig = computed(() => displayedPalette.value.map((cell) => cell.hex).sort().join('|'))
 const isFavorited = computed(() => favorites.value.some((favorite) => favorite.sig === activeSig.value))
@@ -513,9 +570,8 @@ const viewFavorite = (fav: Favorite) => {
   fieldHover.value = false
 }
 
-const removeFavorite = (id: number) => {
-  favorites.value = favorites.value.filter((favorite) => favorite.id !== id)
-  persistFavorites()
+const handleRemoveFavorite = (id: number) => {
+  removeFavorite(id)
 }
 
 const viewportWidth = ref(1280)
@@ -534,12 +590,18 @@ const onResize = () => {
   viewportWidth.value = window.innerWidth
 }
 onMounted(() => {
-  favorites.value = loadFavorites()
   viewportWidth.value = window.innerWidth
   window.addEventListener('resize', onResize)
   window.addEventListener('keydown', onKeydown)
+  restoreAtlasState()
+})
+// The page may be kept alive across /advanced navigation, so onMounted only
+// runs once. Re-sync atlas state on every reactivation.
+onActivated(() => {
+  restoreAtlasState()
 })
 onBeforeUnmount(() => {
+  saveAtlasState()
   if (typeof window !== 'undefined') {
     window.removeEventListener('resize', onResize)
     window.removeEventListener('keydown', onKeydown)
@@ -560,28 +622,15 @@ const selectFromDropdown = (fav: Favorite) => {
   favoritesOpen.value = false
 }
 
-const persistFavorites = () => {
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites.value))
-  }
-}
-
 const saveFavorite = () => {
   const cells = displayedPalette.value.map((cell) => ({ role: cell.role, hex: cell.hex }))
   const sig = cells.map((cell) => cell.hex).sort().join('|')
-  const existing = favorites.value.find((favorite) => favorite.sig === sig)
-  if (existing) {
-    favorites.value = favorites.value.filter((favorite) => favorite.id !== existing.id)
-    if (displayedFavorite.value?.sig === existing.sig) displayedFavorite.value = null
-    persistFavorites()
+  const center = displayedCoord.value
+  const added = addFavorite({ sig, center: { x: center.x, y: center.y }, cells })
+  if (!added) {
+    if (displayedFavorite.value?.sig === sig) displayedFavorite.value = null
     savedFlash.value = 'Removed from favorites'
   } else {
-    const center = displayedCoord.value
-    favorites.value = [
-      { id: Date.now(), sig, center: { x: center.x, y: center.y }, cells },
-      ...favorites.value
-    ]
-    persistFavorites()
     savedFlash.value = 'Saved to favorites'
   }
   if (typeof window !== 'undefined') window.setTimeout(() => { savedFlash.value = '' }, 2200)
@@ -806,7 +855,8 @@ onMounted(centerField)
         </aside>
       </section>
 
-      <section id="atlas" class="atlas-stage" aria-label="Overlapping LCH palette field">
+      <section id="atlas" class="atlas-stage" :class="{ 'is-restoring': !atlasRestored }" aria-label="Overlapping LCH palette field">
+        <div class="atlas-spinner" aria-hidden="true" v-show="!atlasRestored"></div>
         <div class="stage-topline">
           <span>{{ fieldCells.length }} CELLS / 3 × 2 COLOR BLOCKS</span>
           <span>VERTICAL SCROLL TO EXPAND</span>
@@ -1538,6 +1588,38 @@ h1 em {
   border: 1px solid var(--line);
   background: #fff;
   box-shadow: 12px 12px 0 rgba(216, 231, 243, 0.9);
+  transition: opacity 240ms ease;
+}
+
+.atlas-stage.is-restoring {
+  opacity: 0;
+}
+
+.atlas-spinner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 26px;
+  height: 26px;
+  margin: -13px 0 0 -13px;
+  border: 2px solid var(--line);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: atlas-spin 700ms linear infinite;
+  z-index: 4;
+  pointer-events: none;
+}
+
+@keyframes atlas-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .atlas-spinner {
+    animation: none;
+  }
 }
 
 .stage-topline,
